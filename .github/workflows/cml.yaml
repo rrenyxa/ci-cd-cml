@@ -1,62 +1,52 @@
-name: CML Training on Self-Hosted EC2 Runner
+name: CML Training - Simple Version
 
 on:
-  workflow_dispatch:          # запуск вручную из GitHub UI
+  workflow_dispatch:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
 
 jobs:
-  train-and-report:
-    runs-on: [self-hosted, Linux]     # или [self-hosted, cml-runner] если ты добавил такой лейбл
-    # container: docker://python:3.11-slim   # закомментировано — у тебя Amazon Linux 2023, не нужен контейнер
+  train:
+    runs-on: [self-hosted, Linux]
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Python on Amazon Linux
-        uses: kishaningithub/setup-python-amazon-linux@v1
+      - name: Setup Node.js (for CML)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install CML
+        run: npm install -g @dvcorg/cml
+
+      - name: Install Python dependencies
         run: |
           python -m venv venv || true
           . venv/bin/activate
           pip install --upgrade pip
           pip install numpy matplotlib seaborn scikit-learn
-          curl -s https://cml.dev/install.sh | bash
 
-      - name: Run model training
+      - name: Train model
         run: |
           . venv/bin/activate
-          python train.py   # твой скрипт (должен создавать metrics.txt и confusion_matrix.png)
+          python train.py
 
-      - name: Generate and send CML report (in PR)
-        if: github.event_name == 'pull_request'
+      - name: Write CML report
         env:
-          REPO_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}   # PAT с правами repo
+          REPO_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         run: |
           . venv/bin/activate
           echo "## Training Results" > report.md
-          echo "" >> report.md
           cat metrics.txt >> report.md
           echo "" >> report.md
-          echo "![Confusion Matrix](confusion_matrix.png)" >> report.md
-          cml send-comment \
-            --token "$REPO_TOKEN" \
-            --report \
-            --file report.md \
-            --title "Model Training Report"
-
-      - name: Upload artifacts (optional — for debugging)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: training-results
-          path: |
-            metrics.txt
-            confusion_matrix.png
-          retention-days: 7
+          echo "<image-card alt="Confusion Matrix" src="confusion_matrix.png" ></image-card>" >> report.md
+          cml comment create report.md
