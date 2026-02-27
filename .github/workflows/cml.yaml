@@ -9,7 +9,7 @@ on:
 
 jobs:
   launch-runner:
-    runs-on: ubuntu-latest   # или ubuntu-22.04, как в лекции
+    runs-on: ubuntu-22.04   # или ubuntu-22.04, как в лекции
     steps:
       - uses: actions/checkout@v4
 
