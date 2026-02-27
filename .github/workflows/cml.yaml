@@ -1,4 +1,4 @@
-name: CML Auto EC2 Training
+name: CML Training on Self-Hosted EC2 Runner
 
 on:
   workflow_dispatch:          # запуск вручную из GitHub UI
@@ -8,63 +8,18 @@ on:
     branches: [ main ]
 
 jobs:
-  launch-runner:
-    runs-on: ubuntu-22.04     # ubuntu-22.04 обычно решает проблемы с Terraform в CML
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup CML
-        uses: iterative/setup-cml@v2
-
-      - name: Launch or reuse CML runner on AWS
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          REPO_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}  # PAT с правами repo + workflow
-        run: |
-          STARTUP_SCRIPT=$(base64 -w 0 <<'EOF'
-          #!/bin/bash
-          set -e
-          # Обновление системы — поддержка Ubuntu / Amazon Linux / CentOS
-          apt update -y && apt upgrade -y || \
-            yum update -y || \
-            dnf update -y
-          # Установка базовых утилит
-          apt install -y curl tar gzip jq git python3 python3-pip python3-venv || \
-            yum install -y curl tar gzip jq git python3 python3-pip || \
-            dnf install -y curl tar gzip jq git python3 python3-pip
-          # Установка GitHub Actions runner
-          mkdir -p /actions-runner && cd /actions-runner
-          curl -o runner.tar.gz -L \
-            https://github.com/actions/runner/releases/download/v2.317.0/actions-runner-linux-x64-2.317.0.tar.gz
-          tar xzf runner.tar.gz
-          ./config.sh \
-            --url https://github.com/rrenyxa/ci-cd-cml \
-            --token "${CML_RUNNER_TOKEN:-}" \
-            --labels cml-runner \
-            --unattended \
-            --replace
-          # Запуск runner в фоне
-          ./run.sh &
-          EOF
-          )
-
-          cml runner launch \
-            --reuse \
-            --labels=cml-runner \
-            --cloud=aws \
-            --cloud-region=us-east-1 \
-            --cloud-type=t3.micro \
-            --cloud-hdd-size=20 \
-            --idle-timeout=300 \
-            --cloud-startup-script "$STARTUP_SCRIPT"
-
   train-and-report:
-    needs: launch-runner
-    runs-on: [self-hosted, cml-runner]
-    container: docker://python:3.11-slim   # опционально, можно убрать
+    runs-on: [self-hosted, Linux]     # или [self-hosted, cml-runner] если ты добавил такой лейбл
+    # container: docker://python:3.11-slim   # закомментировано — у тебя Amazon Linux 2023, не нужен контейнер
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
@@ -73,14 +28,17 @@ jobs:
           pip install --upgrade pip
           pip install numpy matplotlib seaborn scikit-learn iterativeai[cml]
 
-      - name: Train model
-        run: python train.py   # твой скрипт
+      - name: Run model training
+        run: |
+          . venv/bin/activate
+          python train.py   # твой скрипт (должен создавать metrics.txt и confusion_matrix.png)
 
-      - name: Generate CML report
+      - name: Generate and send CML report (in PR)
         if: github.event_name == 'pull_request'
         env:
-          REPO_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          REPO_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}   # PAT с правами repo
         run: |
+          . venv/bin/activate
           echo "## Training Results" > report.md
           echo "" >> report.md
           cat metrics.txt >> report.md
@@ -91,3 +49,13 @@ jobs:
             --report \
             --file report.md \
             --title "Model Training Report"
+
+      - name: Upload artifacts (optional — for debugging)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-results
+          path: |
+            metrics.txt
+            confusion_matrix.png
+          retention-days: 7
