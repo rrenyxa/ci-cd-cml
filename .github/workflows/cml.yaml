@@ -1,4 +1,4 @@
-name: CML Training - Simple Version
+name: CML Training - Working on AL2023
 
 on:
   workflow_dispatch:
@@ -15,22 +15,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js (for CML)
+      - name: Setup Node.js for CML (только если нужно)
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install CML
+      - name: Install CML CLI
         run: npm install -g @dvcorg/cml
 
       - name: Install Python dependencies
         run: |
-          python -m venv venv || true
+          python3.11 -m venv venv || true
           . venv/bin/activate
           pip install --upgrade pip
           pip install numpy matplotlib seaborn scikit-learn
@@ -38,7 +33,7 @@ jobs:
       - name: Train model
         run: |
           . venv/bin/activate
-          python train.py
+          python3.11 train.py   # твой скрипт
 
       - name: Write CML report
         env:
@@ -48,5 +43,5 @@ jobs:
           echo "## Training Results" > report.md
           cat metrics.txt >> report.md
           echo "" >> report.md
-          echo "<image-card alt="Confusion Matrix" src="confusion_matrix.png" ></image-card>" >> report.md
+          echo "![Confusion Matrix](confusion_matrix.png)" >> report.md
           cml comment create report.md
