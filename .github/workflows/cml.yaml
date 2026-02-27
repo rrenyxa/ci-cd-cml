@@ -26,7 +26,7 @@ jobs:
                   --reuse \
                   --labels=cml-runner \
                   --cloud=aws \
-                  --cloud-region=eu-west-1 \
+                  --cloud-region=es-east-1 \
                   --cloud-type=t3.micro \
                   --idle-timeout=300                   # опционально: удалить runner после одного job'а
 
