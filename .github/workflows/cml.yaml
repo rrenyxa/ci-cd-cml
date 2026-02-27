@@ -22,15 +22,14 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           REPO_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}   # PAT с правами repo + workflow
         run: |
-          cml runner launch \
-            --reuse \
-            --labels=cml-runner \
-            --cloud=aws \
-            --cloud-region=eu-north-1 \
-            --cloud-type=t3.micro \
-            --cloud-image=ami-056335ec4a8783947 \   # твой AL2023 AMI, если хочешь именно его
-            --idle-timeout=300 \                    # авто-стоп через 5 мин безделья
-            --single                                # опционально: удалить runner после одного job'а
+                  cml runner launch \
+                    --reuse \
+                    --labels=cml-runner \
+                    --cloud=aws \
+                    --cloud-region=eu-north-1 \
+                    --cloud-type=t3.micro \
+                    --idle-timeout=300 \
+                    --single                           # опционально: удалить runner после одного job'а
 
   train-and-report:
     needs: launch-runner   # ждёт, пока runner запустится
