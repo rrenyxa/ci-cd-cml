@@ -45,3 +45,12 @@ jobs:
           echo "" >> report.md
           echo "![Confusion Matrix](confusion_matrix.png)" >> report.md
           cml comment create report.md
+      - name: Upload training results
+        if: always()  # чтобы загружал даже при ошибках
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-output
+          path: |
+            metrics.txt
+            confusion_matrix.png
+          retention-days: 7
