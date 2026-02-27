@@ -23,13 +23,12 @@ jobs:
           REPO_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}   # PAT с правами repo + workflow
         run: |
                   cml runner launch \
-                    --reuse \
-                    --labels=cml-runner \
-                    --cloud=aws \
-                    --cloud-region=eu-north-1 \
-                    --cloud-type=t3.micro \
-                    --idle-timeout=300 \
-                    --single                           # опционально: удалить runner после одного job'а
+                  --reuse \
+                  --labels=cml-runner \
+                  --cloud=aws \
+                  --cloud-region=eu-north-1 \
+                  --cloud-type=t3.micro \
+                  --idle-timeout=300                   # опционально: удалить runner после одного job'а
 
   train-and-report:
     needs: launch-runner   # ждёт, пока runner запустится
