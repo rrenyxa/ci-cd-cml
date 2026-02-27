@@ -1,7 +1,7 @@
 name: CML Auto EC2 Training
 
 on:
-  workflow_dispatch:   # запуск вручную из GitHub UI
+  workflow_dispatch:          # запуск вручную из GitHub UI
   push:
     branches: [ main ]
   pull_request:
@@ -9,47 +9,75 @@ on:
 
 jobs:
   launch-runner:
-    runs-on: ubuntu-22.04   # или ubuntu-22.04, как в лекции
+    runs-on: ubuntu-22.04     # ubuntu-22.04 обычно решает проблемы с Terraform в CML
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup CML
-        uses: iterative/setup-cml@v2   
+        uses: iterative/setup-cml@v2
 
       - name: Launch or reuse CML runner on AWS
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          REPO_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}   # PAT с правами repo + workflow
+          REPO_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}  # PAT с правами repo + workflow
         run: |
-                  cml runner launch \
-                  --reuse \
-                  --labels=cml-runner \
-                  --cloud=aws \
-                  --cloud-region=es-east-1 \
-                  --cloud-hdd-size=20 \
-                  --cloud-type=m7i-flex.large \
-                  --idle-timeout=300                   # опционально: удалить runner после одного job'а
+          STARTUP_SCRIPT=$(base64 -w 0 <<'EOF'
+          #!/bin/bash
+          set -e
+          # Обновление системы — поддержка Ubuntu / Amazon Linux / CentOS
+          apt update -y && apt upgrade -y || \
+            yum update -y || \
+            dnf update -y
+          # Установка базовых утилит
+          apt install -y curl tar gzip jq git python3 python3-pip python3-venv || \
+            yum install -y curl tar gzip jq git python3 python3-pip || \
+            dnf install -y curl tar gzip jq git python3 python3-pip
+          # Установка GitHub Actions runner
+          mkdir -p /actions-runner && cd /actions-runner
+          curl -o runner.tar.gz -L \
+            https://github.com/actions/runner/releases/download/v2.317.0/actions-runner-linux-x64-2.317.0.tar.gz
+          tar xzf runner.tar.gz
+          ./config.sh \
+            --url https://github.com/rrenyxa/ci-cd-cml \
+            --token "${CML_RUNNER_TOKEN:-}" \
+            --labels cml-runner \
+            --unattended \
+            --replace
+          # Запуск runner в фоне
+          ./run.sh &
+          EOF
+          )
+
+          cml runner launch \
+            --reuse \
+            --labels=cml-runner \
+            --cloud=aws \
+            --cloud-region=us-east-1 \
+            --cloud-type=t3.micro \
+            --cloud-hdd-size=20 \
+            --idle-timeout=300 \
+            --cloud-startup-script "$STARTUP_SCRIPT"
 
   train-and-report:
-    needs: launch-runner   # ждёт, пока runner запустится
-    runs-on: [self-hosted, cml-runner]   # лейбл из предыдущего шага
-    container: docker://python:3.11-slim   # или убери, если хочешь использовать ОС runner'а без контейнера
-
+    needs: launch-runner
+    runs-on: [self-hosted, cml-runner]
+    container: docker://python:3.11-slim   # опционально, можно убрать
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
-          python -m venv venv
+          python -m venv venv || true
           . venv/bin/activate
           pip install --upgrade pip
           pip install numpy matplotlib seaborn scikit-learn iterativeai[cml]
 
       - name: Train model
-        run: python train.py   # твой скрипт с make_classification, RandomForest и т.д.
+        run: python train.py   # твой скрипт
 
       - name: Generate CML report
+        if: github.event_name == 'pull_request'
         env:
           REPO_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         run: |
