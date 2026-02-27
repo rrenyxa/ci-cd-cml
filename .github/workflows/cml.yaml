@@ -1,0 +1,66 @@
+name: CML Auto EC2 Training
+
+on:
+  workflow_dispatch:   # запуск вручную из GitHub UI
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  launch-runner:
+    runs-on: ubuntu-latest   # или ubuntu-22.04, как в лекции
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup CML
+        uses: iterative/setup-cml@v2   # свежая версия
+
+      - name: Launch or reuse CML runner on AWS
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          REPO_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}   # PAT с правами repo + workflow
+        run: |
+          cml runner launch \
+            --reuse \
+            --labels=cml-runner \
+            --cloud=aws \
+            --cloud-region=eu-north-1 \
+            --cloud-type=t3.micro \
+            --cloud-image=ami-056335ec4a8783947 \   # твой AL2023 AMI, если хочешь именно его
+            --idle-timeout=300 \                    # авто-стоп через 5 мин безделья
+            --single                                # опционально: удалить runner после одного job'а
+
+  train-and-report:
+    needs: launch-runner   # ждёт, пока runner запустится
+    runs-on: [self-hosted, cml-runner]   # лейбл из предыдущего шага
+    container: docker://python:3.11-slim   # или убери, если хочешь использовать ОС runner'а без контейнера
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          python -m venv venv
+          . venv/bin/activate
+          pip install --upgrade pip
+          pip install numpy matplotlib seaborn scikit-learn iterativeai[cml]
+
+      - name: Train model
+        run: python train.py   # твой скрипт с make_classification, RandomForest и т.д.
+
+      - name: Generate CML report
+        env:
+          REPO_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+        run: |
+          echo "## Training Results" > report.md
+          echo "" >> report.md
+          cat metrics.txt >> report.md
+          echo "" >> report.md
+          echo "![Confusion Matrix](confusion_matrix.png)" >> report.md
+          cml send-comment \
+            --token "$REPO_TOKEN" \
+            --report \
+            --file report.md \
+            --title "Model Training Report"
